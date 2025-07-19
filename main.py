@@ -34,7 +34,7 @@ app = FastAPI()
 class Question(BaseModel):
     question: str
 
-# Helper: check if the question is complex
+# Check if the question is complex
 def is_complex_question(q: str, score: float) -> bool:
     q_lower = q.lower()
     return (
@@ -46,18 +46,29 @@ def is_complex_question(q: str, score: float) -> bool:
         score < 0.70
     )
 
-# Enhanced fallback using Kimi AI + dataset context
+# AI fallback with health filtering instruction
 def ask_ai_fallback(question: str, top_examples: list = None):
     context = ""
     if top_examples:
         context = "\n".join([f"- {ex}" for ex in top_examples])
 
     prompt = f"""
-You are a helpful medical AI assistant. Here's some relevant information from a trusted dataset:
+You are a kind and helpful Somali medical assistant.
 
+Please follow these rules carefully:
+
+1. If the user sends a friendly greeting like "asc", "ma fiicantahay", or "hello", respond politely and say:  
+   "👋 Waad salaamantahay! Waxaan ahay caawiye caafimaad. Weydii su'aal la xiriirta caafimaadka fadlan."
+
+2. If the user's question is NOT related to health, do not answer it. Instead, respond with:  
+   "❌ Su'aashan ma quseyso caafimaadka. Fadlan i weydii wax ku saabsan caafimaadka kaliya."
+
+3. If the question is about health, use the context below to answer clearly and helpfully.
+
+📘 Medical Context:
 {context}
 
-Now answer this user question as clearly and helpfully as possible:
+💬 User Question:
 {question}
     """
 
@@ -70,7 +81,8 @@ Now answer this user question as clearly and helpfully as possible:
     except Exception as e:
         return f"❌ AI fallback error: {e}"
 
-# Main chat endpoint
+
+# Main /chat endpoint
 @app.post("/chat")
 def get_answer(payload: Question):
     user_question = payload.question.strip()
@@ -81,14 +93,12 @@ def get_answer(payload: Question):
     best_score = cosine_scores[best_match_idx].item()
 
     if not is_complex_question(user_question, best_score) and best_score >= 0.65:
-        # Simple question → Dataset answer
         return {
             "source": "dataset",
             "answer": answers[best_match_idx],
             "score": round(best_score, 2)
         }
     else:
-        # Complex question → AI fallback with dataset context
         top_indices = torch.topk(cosine_scores, 3).indices.tolist()
         top_context = [f"{questions[i]} — {answers[i]}" for i in top_indices]
 
